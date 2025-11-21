@@ -113,7 +113,11 @@ def train():
                 
                 # Decode current sample
                 input_text = tokenizer.decode(X[0].tolist())
-                target_text = tokenizer.decode(Y[0].tolist())
+                
+                # Decode model prediction (argmax of logits)
+                with torch.no_grad():
+                    pred_ids = logits[0].argmax(dim=-1)
+                    output_text = tokenizer.decode(pred_ids.tolist())
                 
                 # Send to server
                 vis_data = {
@@ -121,7 +125,7 @@ def train():
                     "attention": all_attn_weights,
                     "data_sample": {
                         "input": input_text,
-                        "target": target_text
+                        "output": output_text
                     }
                 }
                 update_state(vis_data, iter_num, loss_val)

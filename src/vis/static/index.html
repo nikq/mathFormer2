@@ -127,7 +127,7 @@
                             id="loss-display">0.0000</span></div>
                     <div class="metric-value" style="font-size: 16px; margin-top: 10px;">
                         Input: <span id="input-sample" style="font-family: monospace; color: #cbd5e1;"></span><br>
-                        Target: <span id="target-sample" style="font-family: monospace; color: #cbd5e1;"></span>
+                        Output: <span id="output-sample" style="font-family: monospace; color: #cbd5e1;"></span>
                     </div>
                 </div>
                 <div id="loss-chart" style="flex-grow: 1; height: 200px;"></div>
@@ -166,7 +166,7 @@
 
             if (data.weights && data.weights.data_sample) {
                 document.getElementById("input-sample").innerText = data.weights.data_sample.input;
-                document.getElementById("target-sample").innerText = data.weights.data_sample.target;
+                document.getElementById("output-sample").innerText = data.weights.data_sample.output;
             }
 
             renderLossChart(data.metrics.loss);
