@@ -24,8 +24,7 @@
             padding: 20px;
             display: flex;
             flex-direction: column;
-            height: 100vh;
-            overflow: hidden;
+            min-height: 100vh;
         }
 
         h1 {
@@ -39,10 +38,8 @@
         .container {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            grid-template-rows: 300px 1fr;
+            grid-template-rows: 300px auto;
             gap: 20px;
-            height: 100%;
-            overflow: hidden;
         }
 
         .card {
@@ -237,7 +234,7 @@
 
             // Clear container to re-order or just append? 
             // Let's clear everything to be safe and simple for now.
-            container.innerHTML = '<div class="card-header">All Model Weights</div><div id="weights-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; overflow-y: auto; height: 100%;"></div>';
+            container.innerHTML = '<div class="card-header">All Model Weights</div><div id="weights-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px;"></div>';
             const grid = document.getElementById("weights-grid");
 
             keys.forEach(key => {
@@ -343,7 +340,7 @@
             });
 
             // Clear and rebuild for simplicity
-            container.innerHTML = '<div class="card-header">Attention Patterns (All Heads)</div><div id="attn-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; overflow-y: auto; height: 100%;"></div>';
+            container.innerHTML = '<div class="card-header">Attention Patterns (All Heads)</div><div id="attn-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px;"></div>';
             const grid = document.getElementById("attn-grid");
 
             keys.forEach(key => {
