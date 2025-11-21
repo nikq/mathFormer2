@@ -141,10 +141,7 @@
         
         // Setup D3 Charts
         const margin = {top: 10, right: 10, bottom: 20, left: 30};
-        
-        // Loss Chart
         const lossContainer = d3.select("#loss-chart");
-        // We'll size dynamically in render
         
         ws.onmessage = function(event) {
             const data = JSON.parse(event.data);
@@ -160,7 +157,7 @@
             renderLossChart(data.metrics.loss);
             
             if (data.weights) {
-                if (data.weights.layer_weights) renderWeights(data.weights.layer_weights);
+                if (data.weights.layer_weights) renderAllWeights(data.weights.layer_weights);
                 if (data.weights.attention) renderAttention(data.weights.attention);
             }
         }
@@ -204,55 +201,115 @@
                 .call(d3.axisLeft(y).ticks(5));
         }
 
-        function renderWeights(weights) {
-            // Expecting weights to be a 2D array (or flattened)
-            // For demo, let's assume it's a matrix
-            const container = document.getElementById("weight-heatmap");
-            container.innerHTML = ""; // Clear
+        function renderAllWeights(allWeights) {
+            const container = document.getElementById("weights-panel");
+            // Clear existing content but we might want to be smarter about updates
+            // For now, let's just rebuild if keys change, or update canvas if exists
             
-            // Simple Canvas implementation for performance with large matrices
-            const canvas = document.createElement("canvas");
-            canvas.width = container.clientWidth;
-            canvas.height = container.clientHeight;
-            container.appendChild(canvas);
+            // Check if we need to build structure
+            const keys = Object.keys(allWeights).sort();
+            
+            // If container is empty or keys changed significantly (simple check: count)
+            // Ideally we diff, but let's clear for simplicity on first pass or structure change
+            // Actually, let's just clear and rebuild for this "toy" scale. 
+            // Optimization: Check if child count matches keys length.
+            
+            // Better: Create a map of existing canvases
+            const existing = {};
+            container.querySelectorAll('.weight-item').forEach(el => {
+                existing[el.dataset.name] = el;
+            });
+
+            // Clear container to re-order or just append? 
+            // Let's clear everything to be safe and simple for now.
+            container.innerHTML = '<div class="card-header">All Model Weights</div><div id="weights-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; overflow-y: auto; height: 100%;"></div>';
+            const grid = document.getElementById("weights-grid");
+
+            keys.forEach(key => {
+                const weightData = allWeights[key];
+                
+                const item = document.createElement("div");
+                item.className = "weight-item";
+                item.style.display = "flex";
+                item.style.flexDirection = "column";
+                item.style.height = "200px";
+                item.style.backgroundColor = "rgba(0,0,0,0.2)";
+                item.style.borderRadius = "8px";
+                item.style.padding = "5px";
+                
+                const label = document.createElement("div");
+                label.innerText = key;
+                label.style.fontSize = "10px";
+                label.style.marginBottom = "5px";
+                label.style.color = "#94a3b8";
+                label.style.whiteSpace = "nowrap";
+                label.style.overflow = "hidden";
+                label.style.textOverflow = "ellipsis";
+                item.appendChild(label);
+
+                const canvasContainer = document.createElement("div");
+                canvasContainer.style.flexGrow = "1";
+                canvasContainer.style.position = "relative";
+                item.appendChild(canvasContainer);
+
+                const canvas = document.createElement("canvas");
+                // Use client dimensions after append? No, set 100%
+                canvas.style.width = "100%";
+                canvas.style.height = "100%";
+                canvasContainer.appendChild(canvas);
+                
+                grid.appendChild(item);
+
+                // Render heatmap
+                renderHeatmapOnCanvas(canvas, weightData);
+            });
+        }
+
+        function renderHeatmapOnCanvas(canvas, data) {
+            // Handle 1D (bias) vs 2D (weight)
+            let matrix = data;
+            if (!Array.isArray(data[0])) {
+                // 1D array -> make it 1xN matrix for visualization
+                matrix = [data];
+            }
+
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width;
+            canvas.height = rect.height;
             const ctx = canvas.getContext("2d");
             
-            const rows = weights.length;
-            const cols = weights[0].length;
+            const rows = matrix.length;
+            const cols = matrix[0].length;
             const cellWidth = canvas.width / cols;
             const cellHeight = canvas.height / rows;
 
-            // Find min/max for normalization
+            // Find min/max
             let min = Infinity, max = -Infinity;
             for(let r=0; r<rows; r++) {
                 for(let c=0; c<cols; c++) {
-                    const v = weights[r][c];
+                    const v = matrix[r][c];
                     if(v < min) min = v;
                     if(v > max) max = v;
                 }
             }
+            
+            // Avoid div by zero
+            if (max === min) max = min + 1e-9;
 
             for(let r=0; r<rows; r++) {
                 for(let c=0; c<cols; c++) {
-                    const val = weights[r][c];
-                    // Normalize -1 to 1 (approx) to Color
-                    // Blue (neg) -> Black (0) -> Red (pos)
-                    const norm = (val - min) / (max - min); // 0 to 1
-                    
-                    // Simple heatmap color: 
-                    // 0 -> Blue, 0.5 -> Black, 1 -> Red
-                    // Or just grayscale for simplicity first, or viridis
-                    
-                    // Let's do Blue-Red
+                    const val = matrix[r][c];
+                    const norm = (val - min) / (max - min);
+                    // Blue-Red Heatmap
                     const intensity = Math.floor(norm * 255);
                     ctx.fillStyle = `rgb(${intensity}, 0, ${255-intensity})`;
+                    // Use simple rects
                     ctx.fillRect(c*cellWidth, r*cellHeight, cellWidth, cellHeight);
                 }
             }
         }
 
         function renderAttention(attn) {
-            // Expecting attn to be [T, T] matrix
             const container = document.getElementById("attn-heatmap");
             container.innerHTML = "";
             
@@ -260,22 +317,8 @@
             canvas.width = container.clientWidth;
             canvas.height = container.clientHeight;
             container.appendChild(canvas);
-            const ctx = canvas.getContext("2d");
             
-            const size = attn.length;
-            const cellW = canvas.width / size;
-            const cellH = canvas.height / size;
-
-            for(let r=0; r<size; r++) {
-                for(let c=0; c<size; c++) {
-                    const val = attn[r][c];
-                    // Attention is 0 to 1.
-                    // Black to Yellow/White
-                    const v = Math.floor(val * 255);
-                    ctx.fillStyle = `rgb(${v}, ${v}, ${v})`;
-                    ctx.fillRect(c*cellW, r*cellH, cellW, cellH);
-                }
-            }
+            renderHeatmapOnCanvas(canvas, attn);
         }
     </script>
 </body>

@@ -115,3 +115,13 @@ class MathFormer(nn.Module):
         for block in self.transformer.h:
             weights.append(block.attn.last_attn_weights)
         return weights
+
+    def get_all_weights(self):
+        """
+        Returns a dictionary of all model parameters as numpy arrays.
+        """
+        weights = {}
+        for name, param in self.named_parameters():
+            if param.requires_grad:
+                weights[name] = param.detach().cpu().numpy().tolist()
+        return weights

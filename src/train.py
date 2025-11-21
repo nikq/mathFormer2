@@ -93,22 +93,20 @@ def train():
             print(f"Iter {iter_num}: Loss {loss_val:.4f}, Difficulty {difficulty}")
             
             # Extract weights
-            # 1. Last layer embedding weights (or similar)
-            # Let's visualize the last layer's self-attention weights for the first sample in batch
-            # And maybe the input embedding weights
+            # 1. All model weights
+            # 2. Attention weights (dynamic)
             
             with torch.no_grad():
                 # Attention from last layer, first head, first sample
                 # shape: [B, H, T, T]
                 attn_weights = model.get_attention_weights()[-1][0, 0, :, :].cpu().numpy()
                 
-                # Let's also visualize the Word Embeddings (WTE)
-                # shape: [Vocab, D_model]
-                wte_weights = model.transformer.wte.weight.cpu().numpy()
+                # All learnable weights
+                all_weights = model.get_all_weights()
                 
                 # Send to server
                 vis_data = {
-                    "layer_weights": wte_weights.tolist(), # Convert to list for JSON
+                    "layer_weights": all_weights, # Now a dict of all weights
                     "attention": attn_weights.tolist()
                 }
                 update_state(vis_data, iter_num, loss_val)
