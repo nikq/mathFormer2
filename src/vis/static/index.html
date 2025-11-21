@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MathFormer2 Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-color: #e2e8f0;
+            --accent-color: #38bdf8;
+            --secondary-color: #94a3b8;
+            --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: var(--font-family);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: var(--accent-color);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 20px;
+            height: 100%;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .card-header {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--secondary-color);
+            margin-bottom: 10px;
+            text-transform: uppercase;
+        }
+
+        #metrics-panel {
+            grid-row: 1 / span 2;
+        }
+
+        #weights-panel {
+            grid-column: 2;
+            grid-row: 1;
+        }
+
+        #attention-panel {
+            grid-column: 2;
+            grid-row: 2;
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text-color);
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: var(--secondary-color);
+        }
+
+        /* D3 Styles */
+        .line {
+            fill: none;
+            stroke: var(--accent-color);
+            stroke-width: 2;
+        }
+        
+        .heatmap-rect {
+            transition: fill 0.2s;
+        }
+
+        .axis text {
+            fill: var(--secondary-color);
+            font-size: 10px;
+        }
+        
+        .axis path, .axis line {
+            stroke: var(--secondary-color);
+            opacity: 0.2;
+        }
+    </style>
+</head>
+<body>
+    <h1>MathFormer2 <span style="font-weight: 300; color: var(--secondary-color); font-size: 1rem;">Live Training</span></h1>
+    
+    <div class="container">
+        <div class="card" id="metrics-panel">
+            <div class="card-header">Training Metrics</div>
+            <div style="margin-bottom: 20px;">
+                <div class="metric-value" id="step-display">0</div>
+                <div class="metric-label">Current Step</div>
+            </div>
+            <div style="margin-bottom: 20px;">
+                <div class="metric-value" id="loss-display">0.000</div>
+                <div class="metric-label">Current Loss</div>
+            </div>
+            <div id="loss-chart" style="flex-grow: 1;"></div>
+        </div>
+
+        <div class="card" id="weights-panel">
+            <div class="card-header">Weight Distribution (Last Layer)</div>
+            <div id="weight-heatmap" style="flex-grow: 1; width: 100%; height: 100%;"></div>
+        </div>
+
+        <div class="card" id="attention-panel">
+            <div class="card-header">Attention Patterns (Head 0)</div>
+            <div id="attn-heatmap" style="flex-grow: 1; width: 100%; height: 100%;"></div>
+        </div>
+    </div>
+
+    <script>
+        const ws = new WebSocket(`ws://${window.location.host}/ws`);
+        
+        // Setup D3 Charts
+        const margin = {top: 10, right: 10, bottom: 20, left: 30};
+        
+        // Loss Chart
+        const lossContainer = d3.select("#loss-chart");
+        // We'll size dynamically in render
+        
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            updateDashboard(data);
+        };
+
+        function updateDashboard(data) {
+            // Update Metrics
+            document.getElementById("step-display").innerText = data.metrics.step;
+            const currentLoss = data.metrics.loss.length > 0 ? data.metrics.loss[data.metrics.loss.length - 1].value : 0;
+            document.getElementById("loss-display").innerText = currentLoss.toFixed(4);
+
+            renderLossChart(data.metrics.loss);
+            
+            if (data.weights) {
+                if (data.weights.layer_weights) renderWeights(data.weights.layer_weights);
+                if (data.weights.attention) renderAttention(data.weights.attention);
+            }
+        }
+
+        function renderLossChart(lossData) {
+            const container = document.getElementById("loss-chart");
+            const width = container.clientWidth - margin.left - margin.right;
+            const height = container.clientHeight - margin.top - margin.bottom;
+
+            lossContainer.selectAll("*").remove();
+            
+            const svg = lossContainer.append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const x = d3.scaleLinear()
+                .domain([0, d3.max(lossData, d => d.step) || 100])
+                .range([0, width]);
+
+            const y = d3.scaleLinear()
+                .domain([0, d3.max(lossData, d => d.value) || 1])
+                .range([height, 0]);
+
+            svg.append("path")
+                .datum(lossData)
+                .attr("class", "line")
+                .attr("d", d3.line()
+                    .x(d => x(d.step))
+                    .y(d => y(d.value))
+                );
+
+            svg.append("g")
+                .attr("transform", `translate(0,${height})`)
+                .attr("class", "axis")
+                .call(d3.axisBottom(x).ticks(5));
+
+            svg.append("g")
+                .attr("class", "axis")
+                .call(d3.axisLeft(y).ticks(5));
+        }
+
+        function renderWeights(weights) {
+            // Expecting weights to be a 2D array (or flattened)
+            // For demo, let's assume it's a matrix
+            const container = document.getElementById("weight-heatmap");
+            container.innerHTML = ""; // Clear
+            
+            // Simple Canvas implementation for performance with large matrices
+            const canvas = document.createElement("canvas");
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            container.appendChild(canvas);
+            const ctx = canvas.getContext("2d");
+            
+            const rows = weights.length;
+            const cols = weights[0].length;
+            const cellWidth = canvas.width / cols;
+            const cellHeight = canvas.height / rows;
+
+            // Find min/max for normalization
+            let min = Infinity, max = -Infinity;
+            for(let r=0; r<rows; r++) {
+                for(let c=0; c<cols; c++) {
+                    const v = weights[r][c];
+                    if(v < min) min = v;
+                    if(v > max) max = v;
+                }
+            }
+
+            for(let r=0; r<rows; r++) {
+                for(let c=0; c<cols; c++) {
+                    const val = weights[r][c];
+                    // Normalize -1 to 1 (approx) to Color
+                    // Blue (neg) -> Black (0) -> Red (pos)
+                    const norm = (val - min) / (max - min); // 0 to 1
+                    
+                    // Simple heatmap color: 
+                    // 0 -> Blue, 0.5 -> Black, 1 -> Red
+                    // Or just grayscale for simplicity first, or viridis
+                    
+                    // Let's do Blue-Red
+                    const intensity = Math.floor(norm * 255);
+                    ctx.fillStyle = `rgb(${intensity}, 0, ${255-intensity})`;
+                    ctx.fillRect(c*cellWidth, r*cellHeight, cellWidth, cellHeight);
+                }
+            }
+        }
+
+        function renderAttention(attn) {
+            // Expecting attn to be [T, T] matrix
+            const container = document.getElementById("attn-heatmap");
+            container.innerHTML = "";
+            
+            const canvas = document.createElement("canvas");
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            container.appendChild(canvas);
+            const ctx = canvas.getContext("2d");
+            
+            const size = attn.length;
+            const cellW = canvas.width / size;
+            const cellH = canvas.height / size;
+
+            for(let r=0; r<size; r++) {
+                for(let c=0; c<size; c++) {
+                    const val = attn[r][c];
+                    // Attention is 0 to 1.
+                    // Black to Yellow/White
+                    const v = Math.floor(val * 255);
+                    ctx.fillStyle = `rgb(${v}, ${v}, ${v})`;
+                    ctx.fillRect(c*cellW, r*cellH, cellW, cellH);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
