@@ -38,7 +38,7 @@
         .container {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            grid-template-rows: 300px auto;
+            grid-template-rows: 300px auto 1fr;
             gap: 20px;
         }
 
@@ -68,12 +68,12 @@
 
         #weights-panel {
             grid-column: 1;
-            grid-row: 2;
+            grid-row: 3;
         }
 
         #attention-panel {
             grid-column: 2;
-            grid-row: 2;
+            grid-row: 3;
         }
 
         .metric-value {
@@ -108,6 +108,27 @@
             stroke: var(--secondary-color);
             opacity: 0.2;
         }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .control-group label {
+            font-size: 10px;
+            color: var(--secondary-color);
+            text-transform: uppercase;
+        }
+
+        .control-group input {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--secondary-color);
+            color: var(--text-color);
+            padding: 4px 8px;
+            border-radius: 4px;
+            width: 60px;
+        }
     </style>
 </head>
 
@@ -129,6 +150,32 @@
                 </div>
                 <div id="loss-chart" style="flex-grow: 1; height: 200px;"></div>
             </div>
+        </div>
+
+        <div class="card" id="control-panel"
+            style="grid-column: 1 / -1; grid-row: 2; display: flex; flex-direction: row; gap: 20px; align-items: center; padding: 10px 20px;">
+            <div class="card-header" style="margin-bottom: 0; margin-right: 20px;">Control Panel</div>
+
+            <div class="control-group">
+                <label>Difficulty</label>
+                <input type="number" id="cfg-difficulty" value="1" min="1" max="10">
+            </div>
+            <div class="control-group">
+                <label>Layers</label>
+                <input type="number" id="cfg-layers" value="4" min="1" max="12">
+            </div>
+            <div class="control-group">
+                <label>Heads</label>
+                <input type="number" id="cfg-heads" value="4" min="1" max="12">
+            </div>
+            <div class="control-group">
+                <label>D_Model</label>
+                <input type="number" id="cfg-dmodel" value="128" step="16" min="16">
+            </div>
+
+            <button onclick="restartTraining()"
+                style="margin-left: auto; background: var(--accent-color); border: none; padding: 8px 16px; border-radius: 6px; color: #0f172a; font-weight: bold; cursor: pointer;">Restart
+                Training</button>
         </div>
 
         <div class="card" id="weights-panel">

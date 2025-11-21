@@ -6,7 +6,7 @@ import numpy as np
 from src.data.generator import MathGenerator
 from src.model.tokenizer import CharTokenizer
 from src.model.transformer import MathFormer, MathFormerConfig
-from src.vis.server import start_server, update_state
+from src.vis.server import start_server, update_state, get_latest_command
 
 # Hyperparameters
 BATCH_SIZE = 64
@@ -16,63 +16,56 @@ DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 if torch.backends.mps.is_available():
     DEVICE = 'mps'
 
-def train():
-    print(f"Using device: {DEVICE}")
-    
-    # 1. Setup Data
-    generator = MathGenerator()
-    tokenizer = CharTokenizer()
-    
-    # 2. Setup Model
-    config = MathFormerConfig(
-        vocab_size=tokenizer.vocab_size,
-        block_size=128,
-        n_layer=4,
-        n_head=4,
-        d_model=128
-    )
-    model = MathFormer(config).to(DEVICE)
-    optimizer = optim.AdamW(model.parameters(), lr=LEARNING_RATE)
-    
-    print("Model initialized.")
+class Trainer:
+    def __init__(self):
+        self.generator = MathGenerator()
+        self.tokenizer = CharTokenizer()
+        self.config = MathFormerConfig(
+            vocab_size=self.tokenizer.vocab_size,
+            block_size=128,
+            n_layer=4,
+            n_head=4,
+            d_model=128
+        )
+        self.model = None
+        self.optimizer = None
+        self.iter_num = 0
+        self.running = False
+        self.difficulty = 1
+        
+        self.init_model()
 
-    # 3. Training Loop
-    model.train()
-    for iter_num in range(MAX_ITERS):
+    def init_model(self):
+        print(f"Initializing model with config: {self.config}")
+        self.model = MathFormer(self.config).to(DEVICE)
+        self.optimizer = optim.AdamW(self.model.parameters(), lr=LEARNING_RATE)
+        self.iter_num = 0
+        print("Model initialized.")
+
+    def update_config(self, new_config):
+        # Update config based on dict
+        if 'n_layer' in new_config: self.config.n_layer = int(new_config['n_layer'])
+        if 'n_head' in new_config: self.config.n_head = int(new_config['n_head'])
+        if 'd_model' in new_config: self.config.d_model = int(new_config['d_model'])
+        if 'difficulty' in new_config: self.difficulty = int(new_config['difficulty'])
+        # Re-init model
+        self.init_model()
+
+    def step(self):
         # Generate batch
-        # Difficulty schedule: increase every 1000 iters
-        difficulty = 1 + (iter_num // 1000)
-        batch_strs = generator.generate_batch(BATCH_SIZE, difficulty=difficulty)
+        batch_strs = self.generator.generate_batch(BATCH_SIZE, difficulty=self.difficulty)
         
         # Tokenize
-        # We need to pad to the longest in the batch or fixed block_size
-        # For simplicity, let's just pad to block_size or truncate
-        max_len = config.block_size
+        max_len = self.config.block_size
         X_batch = []
         Y_batch = []
         
         for s in batch_strs:
-            ids = tokenizer.encode(s)
-            # Truncate if too long
+            ids = self.tokenizer.encode(s)
             if len(ids) > max_len:
                 ids = ids[:max_len]
-            
-            # Pad
             pad_len = max_len - len(ids)
-            padded_ids = ids + [tokenizer.pad_token_id] * pad_len
-            
-            # For causal prediction: input is ids[:-1], target is ids[1:]
-            # But here we want to predict the next token.
-            # Standard GPT training:
-            # Input:  [A, B, C, PAD]
-            # Target: [B, C, PAD, PAD] (ignore loss on PAD)
-            
-            # Actually, let's just train on the full sequence shifted
-            # x = [0, 1, 2] -> y = [1, 2, 3]
-            
-            # We need to handle padding carefully in loss, but for toy model:
-            # Just mask out padding in loss if possible, or let it learn to predict pad after pad.
-            
+            padded_ids = ids + [self.tokenizer.pad_token_id] * pad_len
             X_batch.append(padded_ids[:-1])
             Y_batch.append(padded_ids[1:])
             
@@ -80,46 +73,33 @@ def train():
         Y = torch.tensor(Y_batch, dtype=torch.long).to(DEVICE)
         
         # Forward
-        logits, loss = model(X, Y)
+        logits, loss = self.model(X, Y)
         
         # Backward
-        optimizer.zero_grad(set_to_none=True)
+        self.optimizer.zero_grad(set_to_none=True)
         loss.backward()
-        optimizer.step()
+        self.optimizer.step()
         
-        # Visualization Update (every 10 steps)
-        if iter_num % 10 == 0:
-            loss_val = loss.item()
-            print(f"Iter {iter_num}: Loss {loss_val:.4f}, Difficulty {difficulty}")
-            
-            # Extract weights
-            # 1. All model weights
-            # 2. Attention weights (dynamic)
-            
+        loss_val = loss.item()
+        
+        # Visualization Update
+        if self.iter_num % 10 == 0:
+            print(f"Iter {self.iter_num}: Loss {loss_val:.4f}, Difficulty {self.difficulty}")
             with torch.no_grad():
-                # Attention from all layers, first head, first sample
-                # shape: [B, H, T, T]
                 all_attn_weights = {}
-                raw_attn = model.get_attention_weights()
+                raw_attn = self.model.get_attention_weights()
                 for i, layer_attn in enumerate(raw_attn):
-                    # layer_attn shape: [Batch, Head, T, T]
                     num_heads = layer_attn.shape[1]
                     for h in range(num_heads):
-                        # Layer i, Batch 0, Head h
                         all_attn_weights[f"L{i}.H{h}"] = layer_attn[0, h, :, :].cpu().numpy().tolist()
                 
-                # All learnable weights
-                all_weights = model.get_all_weights()
+                all_weights = self.model.get_all_weights()
+                input_text = self.tokenizer.decode(X[0].tolist())
                 
-                # Decode current sample
-                input_text = tokenizer.decode(X[0].tolist())
-                
-                # Decode model prediction (argmax of logits)
                 with torch.no_grad():
                     pred_ids = logits[0].argmax(dim=-1)
-                    output_text = tokenizer.decode(pred_ids.tolist())
+                    output_text = self.tokenizer.decode(pred_ids.tolist())
                 
-                # Send to server
                 vis_data = {
                     "layer_weights": all_weights,
                     "attention": all_attn_weights,
@@ -128,27 +108,46 @@ def train():
                         "output": output_text
                     }
                 }
-                update_state(vis_data, iter_num, loss_val)
+                update_state(vis_data, self.iter_num, loss_val)
                 
-        if iter_num % 100 == 0:
-            # Generate a sample to see progress
-            model.eval()
+        if self.iter_num % 100 == 0:
+            self.model.eval()
             with torch.no_grad():
-                # Prompt: "1+1="
                 prompt = "10+10="
-                x = torch.tensor([tokenizer.encode(prompt)], dtype=torch.long).to(DEVICE)
-                # Generate a few tokens
+                x = torch.tensor([self.tokenizer.encode(prompt)], dtype=torch.long).to(DEVICE)
                 for _ in range(10):
-                    logits, _ = model(x)
-                    # Greedy decode
+                    logits, _ = self.model(x)
                     next_token = logits[0, -1, :].argmax()
                     x = torch.cat((x, next_token.unsqueeze(0).unsqueeze(0)), dim=1)
-                    if next_token.item() == tokenizer.pad_token_id:
+                    if next_token.item() == self.tokenizer.pad_token_id:
                         break
-                
-                decoded = tokenizer.decode(x[0].tolist())
+                decoded = self.tokenizer.decode(x[0].tolist())
                 print(f"Sample: {decoded}")
-            model.train()
+            self.model.train()
+            
+        self.iter_num += 1
+
+def main_loop():
+    trainer = Trainer()
+    trainer.running = True
+    
+    while True:
+        # Check for commands
+        cmd = get_latest_command()
+        if cmd:
+            print(f"Received command: {cmd}")
+            if cmd['action'] == 'restart':
+                trainer.update_config(cmd['config'])
+        
+        if trainer.running:
+            try:
+                trainer.step()
+            except Exception as e:
+                print(f"Error in training step: {e}")
+                time.sleep(1)
+        
+        # Small sleep to prevent 100% CPU if not training (though here we always train)
+        # time.sleep(0.001)
 
 if __name__ == "__main__":
     # Start Server in background thread
@@ -157,8 +156,7 @@ if __name__ == "__main__":
     
     print("Server started at http://localhost:8000")
     
-    # Start Training
     try:
-        train()
+        main_loop()
     except KeyboardInterrupt:
         print("Training stopped.")

@@ -16,6 +16,7 @@ class SharedState:
         self.weights = {} # Structure: {layer_name: [[values...]]}
         self.metrics = {"loss": [], "step": 0}
         self.latest_update = 0
+        self.command_queue = [] # List of commands from frontend
 
 state = SharedState()
 
@@ -31,6 +32,24 @@ def update_state(weights, step, loss):
         state.metrics["loss"].append({"step": step, "value": loss})
         state.metrics["step"] = step
         state.latest_update += 1
+
+def get_latest_command():
+    with state.lock:
+        if state.command_queue:
+            return state.command_queue.pop(0)
+        return None
+
+from pydantic import BaseModel
+
+class ControlCommand(BaseModel):
+    action: str
+    config: dict = {}
+
+@app.post("/api/control")
+async def control(cmd: ControlCommand):
+    with state.lock:
+        state.command_queue.append(cmd.dict())
+    return {"status": "ok"}
 
 @app.get("/api/data")
 async def get_data():
