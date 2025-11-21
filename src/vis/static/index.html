@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -92,7 +93,7 @@
             stroke: var(--accent-color);
             stroke-width: 2;
         }
-        
+
         .heatmap-rect {
             transition: fill 0.2s;
         }
@@ -101,16 +102,19 @@
             fill: var(--secondary-color);
             font-size: 10px;
         }
-        
-        .axis path, .axis line {
+
+        .axis path,
+        .axis line {
             stroke: var(--secondary-color);
             opacity: 0.2;
         }
     </style>
 </head>
+
 <body>
-    <h1>MathFormer2 <span style="font-weight: 300; color: var(--secondary-color); font-size: 1rem;">Live Training</span></h1>
-    
+    <h1>MathFormer2 <span style="font-weight: 300; color: var(--secondary-color); font-size: 1rem;">Live Training</span>
+    </h1>
+
     <div class="container">
         <div class="card" id="metrics-panel">
             <div class="card-header">Training Metrics</div>
@@ -138,12 +142,12 @@
 
     <script>
         const ws = new WebSocket(`ws://${window.location.host}/ws`);
-        
+
         // Setup D3 Charts
-        const margin = {top: 10, right: 10, bottom: 20, left: 30};
+        const margin = { top: 10, right: 10, bottom: 20, left: 30 };
         const lossContainer = d3.select("#loss-chart");
-        
-        ws.onmessage = function(event) {
+
+        ws.onmessage = function (event) {
             const data = JSON.parse(event.data);
             updateDashboard(data);
         };
@@ -155,7 +159,7 @@
             document.getElementById("loss-display").innerText = currentLoss.toFixed(4);
 
             renderLossChart(data.metrics.loss);
-            
+
             if (data.weights) {
                 if (data.weights.layer_weights) renderAllWeights(data.weights.layer_weights);
                 if (data.weights.attention) renderAttention(data.weights.attention);
@@ -168,7 +172,7 @@
             const height = container.clientHeight - margin.top - margin.bottom;
 
             lossContainer.selectAll("*").remove();
-            
+
             const svg = lossContainer.append("svg")
                 .attr("width", width + margin.left + margin.right)
                 .attr("height", height + margin.top + margin.bottom)
@@ -205,15 +209,15 @@
             const container = document.getElementById("weights-panel");
             // Clear existing content but we might want to be smarter about updates
             // For now, let's just rebuild if keys change, or update canvas if exists
-            
+
             // Check if we need to build structure
             const keys = Object.keys(allWeights).sort();
-            
+
             // If container is empty or keys changed significantly (simple check: count)
             // Ideally we diff, but let's clear for simplicity on first pass or structure change
             // Actually, let's just clear and rebuild for this "toy" scale. 
             // Optimization: Check if child count matches keys length.
-            
+
             // Better: Create a map of existing canvases
             const existing = {};
             container.querySelectorAll('.weight-item').forEach(el => {
@@ -227,7 +231,7 @@
 
             keys.forEach(key => {
                 const weightData = allWeights[key];
-                
+
                 const item = document.createElement("div");
                 item.className = "weight-item";
                 item.style.display = "flex";
@@ -236,7 +240,7 @@
                 item.style.backgroundColor = "rgba(0,0,0,0.2)";
                 item.style.borderRadius = "8px";
                 item.style.padding = "5px";
-                
+
                 const label = document.createElement("div");
                 label.innerText = key;
                 label.style.fontSize = "10px";
@@ -257,7 +261,7 @@
                 canvas.style.width = "100%";
                 canvas.style.height = "100%";
                 canvasContainer.appendChild(canvas);
-                
+
                 grid.appendChild(item);
 
                 // Render heatmap
@@ -277,7 +281,7 @@
             canvas.width = rect.width;
             canvas.height = rect.height;
             const ctx = canvas.getContext("2d");
-            
+
             const rows = matrix.length;
             const cols = matrix[0].length;
             const cellWidth = canvas.width / cols;
@@ -285,41 +289,79 @@
 
             // Find min/max
             let min = Infinity, max = -Infinity;
-            for(let r=0; r<rows; r++) {
-                for(let c=0; c<cols; c++) {
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
                     const v = matrix[r][c];
-                    if(v < min) min = v;
-                    if(v > max) max = v;
+                    if (v < min) min = v;
+                    if (v > max) max = v;
                 }
             }
-            
+
             // Avoid div by zero
             if (max === min) max = min + 1e-9;
 
-            for(let r=0; r<rows; r++) {
-                for(let c=0; c<cols; c++) {
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
                     const val = matrix[r][c];
                     const norm = (val - min) / (max - min);
                     // Blue-Red Heatmap
                     const intensity = Math.floor(norm * 255);
-                    ctx.fillStyle = `rgb(${intensity}, 0, ${255-intensity})`;
+                    ctx.fillStyle = `rgb(${intensity}, 0, ${255 - intensity})`;
                     // Use simple rects
-                    ctx.fillRect(c*cellWidth, r*cellHeight, cellWidth, cellHeight);
+                    ctx.fillRect(c * cellWidth, r * cellHeight, cellWidth, cellHeight);
                 }
             }
         }
 
-        function renderAttention(attn) {
+        function renderAttention(allAttn) {
             const container = document.getElementById("attn-heatmap");
-            container.innerHTML = "";
-            
-            const canvas = document.createElement("canvas");
-            canvas.width = container.clientWidth;
-            canvas.height = container.clientHeight;
-            container.appendChild(canvas);
-            
-            renderHeatmapOnCanvas(canvas, attn);
+
+            // Check if we need to build structure (similar to weights)
+            const keys = Object.keys(allAttn).sort((a, b) => {
+                // Sort by Layer Index
+                const getNum = s => parseInt(s.match(/\d+/)[0]);
+                return getNum(a) - getNum(b);
+            });
+
+            // Clear and rebuild for simplicity
+            container.innerHTML = '<div class="card-header">Attention Patterns (Head 0)</div><div id="attn-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; overflow-y: auto; height: 100%;"></div>';
+            const grid = document.getElementById("attn-grid");
+
+            keys.forEach(key => {
+                const attnData = allAttn[key];
+
+                const item = document.createElement("div");
+                item.className = "attn-item";
+                item.style.display = "flex";
+                item.style.flexDirection = "column";
+                item.style.height = "200px";
+                item.style.backgroundColor = "rgba(0,0,0,0.2)";
+                item.style.borderRadius = "8px";
+                item.style.padding = "5px";
+
+                const label = document.createElement("div");
+                label.innerText = key;
+                label.style.fontSize = "10px";
+                label.style.marginBottom = "5px";
+                label.style.color = "#94a3b8";
+                item.appendChild(label);
+
+                const canvasContainer = document.createElement("div");
+                canvasContainer.style.flexGrow = "1";
+                canvasContainer.style.position = "relative";
+                item.appendChild(canvasContainer);
+
+                const canvas = document.createElement("canvas");
+                canvas.style.width = "100%";
+                canvas.style.height = "100%";
+                canvasContainer.appendChild(canvas);
+
+                grid.appendChild(item);
+
+                renderHeatmapOnCanvas(canvas, attnData);
+            });
         }
     </script>
 </body>
+
 </html>

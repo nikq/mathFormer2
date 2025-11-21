@@ -97,17 +97,21 @@ def train():
             # 2. Attention weights (dynamic)
             
             with torch.no_grad():
-                # Attention from last layer, first head, first sample
+                # Attention from all layers, first head, first sample
                 # shape: [B, H, T, T]
-                attn_weights = model.get_attention_weights()[-1][0, 0, :, :].cpu().numpy()
+                all_attn_weights = {}
+                raw_attn = model.get_attention_weights()
+                for i, layer_attn in enumerate(raw_attn):
+                    # Layer i, Batch 0, Head 0
+                    all_attn_weights[f"Layer {i} Head 0"] = layer_attn[0, 0, :, :].cpu().numpy().tolist()
                 
                 # All learnable weights
                 all_weights = model.get_all_weights()
                 
                 # Send to server
                 vis_data = {
-                    "layer_weights": all_weights, # Now a dict of all weights
-                    "attention": attn_weights.tolist()
+                    "layer_weights": all_weights,
+                    "attention": all_attn_weights # Now a dict of attention maps
                 }
                 update_state(vis_data, iter_num, loss_val)
                 
