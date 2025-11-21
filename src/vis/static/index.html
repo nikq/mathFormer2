@@ -120,248 +120,262 @@
             <div class="card-header">Training Metrics</div>
             <div style="margin-bottom: 20px;">
                 <div class="metric-value" id="step-display">0</div>
-                <div class="metric-label">Current Step</div>
+                <div class="metric-value">Step: <span id="step-display">0</span> | Loss: <span
+                        id="loss-display">0.0000</span></div>
+                <div class="metric-value" style="font-size: 16px; margin-top: 10px;">
+                    Input: <span id="input-sample" style="font-family: monospace; color: #cbd5e1;"></span><br>
+                    Target: <span id="target-sample" style="font-family: monospace; color: #cbd5e1;"></span>
+                </div>
+                <div id="loss-chart"></div>
             </div>
-            <div style="margin-bottom: 20px;">
-                <div class="metric-value" id="loss-display">0.000</div>
-                <div class="metric-label">Current Loss</div>
+
+            <div class="card" id="weights-panel">
+                <div class="card-header">Model Weights</div>
+                <div id="weights-grid"></div>
             </div>
-            <div id="loss-chart" style="flex-grow: 1;"></div>
+
+            <div class="card" id="attn-heatmap">
+                <div class="card-header">Attention Patterns</div>
+            </div>
         </div>
 
-        <div class="card" id="weights-panel">
-            <div class="card-header">Weight Distribution (Last Layer)</div>
-            <div id="weight-heatmap" style="flex-grow: 1; width: 100%; height: 100%;"></div>
-        </div>
+        <script>
+            const ws = new WebSocket(`ws://${window.location.host}/ws`);
 
-        <div class="card" id="attention-panel">
-            <div class="card-header">Attention Patterns (Head 0)</div>
-            <div id="attn-heatmap" style="flex-grow: 1; width: 100%; height: 100%;"></div>
-        </div>
-    </div>
+            // Setup D3 Charts
+            const margin = { top: 10, right: 10, bottom: 20, left: 30 };
 
-    <script>
-        const ws = new WebSocket(`ws://${window.location.host}/ws`);
+            // Loss Chart
+            const lossContainer = d3.select("#loss-chart");
 
-        // Setup D3 Charts
-        const margin = { top: 10, right: 10, bottom: 20, left: 30 };
-        const lossContainer = d3.select("#loss-chart");
+            ws.onmessage = function (event) {
+                const data = JSON.parse(event.data);
+                updateDashboard(data);
+            };
 
-        ws.onmessage = function (event) {
-            const data = JSON.parse(event.data);
-            updateDashboard(data);
-        };
+            function updateDashboard(data) {
+                // Update Metrics
+                document.getElementById("step-display").innerText = data.metrics.step;
+                const currentLoss = data.metrics.loss.length > 0 ? data.metrics.loss[data.metrics.loss.length - 1].value : 0;
+                document.getElementById("loss-display").innerText = currentLoss.toFixed(4);
 
-        function updateDashboard(data) {
-            // Update Metrics
-            document.getElementById("step-display").innerText = data.metrics.step;
-            const currentLoss = data.metrics.loss.length > 0 ? data.metrics.loss[data.metrics.loss.length - 1].value : 0;
-            document.getElementById("loss-display").innerText = currentLoss.toFixed(4);
+                if (data.weights && data.weights.data_sample) {
+                    document.getElementById("input-sample").innerText = data.weights.data_sample.input;
+                    document.getElementById("target-sample").innerText = data.weights.data_sample.target;
+                }
 
-            renderLossChart(data.metrics.loss);
+                renderLossChart(data.metrics.loss);
 
-            if (data.weights) {
-                if (data.weights.layer_weights) renderAllWeights(data.weights.layer_weights);
-                if (data.weights.attention) renderAttention(data.weights.attention);
-            }
-        }
-
-        function renderLossChart(lossData) {
-            const container = document.getElementById("loss-chart");
-            const width = container.clientWidth - margin.left - margin.right;
-            const height = container.clientHeight - margin.top - margin.bottom;
-
-            lossContainer.selectAll("*").remove();
-
-            const svg = lossContainer.append("svg")
-                .attr("width", width + margin.left + margin.right)
-                .attr("height", height + margin.top + margin.bottom)
-                .append("g")
-                .attr("transform", `translate(${margin.left},${margin.top})`);
-
-            const x = d3.scaleLinear()
-                .domain([0, d3.max(lossData, d => d.step) || 100])
-                .range([0, width]);
-
-            const y = d3.scaleLinear()
-                .domain([0, d3.max(lossData, d => d.value) || 1])
-                .range([height, 0]);
-
-            svg.append("path")
-                .datum(lossData)
-                .attr("class", "line")
-                .attr("d", d3.line()
-                    .x(d => x(d.step))
-                    .y(d => y(d.value))
-                );
-
-            svg.append("g")
-                .attr("transform", `translate(0,${height})`)
-                .attr("class", "axis")
-                .call(d3.axisBottom(x).ticks(5));
-
-            svg.append("g")
-                .attr("class", "axis")
-                .call(d3.axisLeft(y).ticks(5));
-        }
-
-        function renderAllWeights(allWeights) {
-            const container = document.getElementById("weights-panel");
-            // Clear existing content but we might want to be smarter about updates
-            // For now, let's just rebuild if keys change, or update canvas if exists
-
-            // Check if we need to build structure
-            const keys = Object.keys(allWeights).sort();
-
-            // If container is empty or keys changed significantly (simple check: count)
-            // Ideally we diff, but let's clear for simplicity on first pass or structure change
-            // Actually, let's just clear and rebuild for this "toy" scale. 
-            // Optimization: Check if child count matches keys length.
-
-            // Better: Create a map of existing canvases
-            const existing = {};
-            container.querySelectorAll('.weight-item').forEach(el => {
-                existing[el.dataset.name] = el;
-            });
-
-            // Clear container to re-order or just append? 
-            // Let's clear everything to be safe and simple for now.
-            container.innerHTML = '<div class="card-header">All Model Weights</div><div id="weights-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; overflow-y: auto; height: 100%;"></div>';
-            const grid = document.getElementById("weights-grid");
-
-            keys.forEach(key => {
-                const weightData = allWeights[key];
-
-                const item = document.createElement("div");
-                item.className = "weight-item";
-                item.style.display = "flex";
-                item.style.flexDirection = "column";
-                item.style.height = "200px";
-                item.style.backgroundColor = "rgba(0,0,0,0.2)";
-                item.style.borderRadius = "8px";
-                item.style.padding = "5px";
-
-                const label = document.createElement("div");
-                label.innerText = key;
-                label.style.fontSize = "10px";
-                label.style.marginBottom = "5px";
-                label.style.color = "#94a3b8";
-                label.style.whiteSpace = "nowrap";
-                label.style.overflow = "hidden";
-                label.style.textOverflow = "ellipsis";
-                item.appendChild(label);
-
-                const canvasContainer = document.createElement("div");
-                canvasContainer.style.flexGrow = "1";
-                canvasContainer.style.position = "relative";
-                item.appendChild(canvasContainer);
-
-                const canvas = document.createElement("canvas");
-                // Use client dimensions after append? No, set 100%
-                canvas.style.width = "100%";
-                canvas.style.height = "100%";
-                canvasContainer.appendChild(canvas);
-
-                grid.appendChild(item);
-
-                // Render heatmap
-                renderHeatmapOnCanvas(canvas, weightData);
-            });
-        }
-
-        function renderHeatmapOnCanvas(canvas, data) {
-            // Handle 1D (bias) vs 2D (weight)
-            let matrix = data;
-            if (!Array.isArray(data[0])) {
-                // 1D array -> make it 1xN matrix for visualization
-                matrix = [data];
-            }
-
-            const rect = canvas.getBoundingClientRect();
-            canvas.width = rect.width;
-            canvas.height = rect.height;
-            const ctx = canvas.getContext("2d");
-
-            const rows = matrix.length;
-            const cols = matrix[0].length;
-            const cellWidth = canvas.width / cols;
-            const cellHeight = canvas.height / rows;
-
-            // Find min/max
-            let min = Infinity, max = -Infinity;
-            for (let r = 0; r < rows; r++) {
-                for (let c = 0; c < cols; c++) {
-                    const v = matrix[r][c];
-                    if (v < min) min = v;
-                    if (v > max) max = v;
+                if (data.weights) {
+                    if (data.weights.layer_weights) renderAllWeights(data.weights.layer_weights);
+                    if (data.weights.attention) renderAttention(data.weights.attention);
                 }
             }
 
-            // Avoid div by zero
-            if (max === min) max = min + 1e-9;
+            function renderLossChart(lossData) {
+                const container = document.getElementById("loss-chart");
+                const width = container.clientWidth - margin.left - margin.right;
+                const height = container.clientHeight - margin.top - margin.bottom;
 
-            for (let r = 0; r < rows; r++) {
-                for (let c = 0; c < cols; c++) {
-                    const val = matrix[r][c];
-                    const norm = (val - min) / (max - min);
-                    // Blue-Red Heatmap
-                    const intensity = Math.floor(norm * 255);
-                    ctx.fillStyle = `rgb(${intensity}, 0, ${255 - intensity})`;
-                    // Use simple rects
-                    ctx.fillRect(c * cellWidth, r * cellHeight, cellWidth, cellHeight);
+                lossContainer.selectAll("*").remove();
+
+                const svg = lossContainer.append("svg")
+                    .attr("width", width + margin.left + margin.right)
+                    .attr("height", height + margin.top + margin.bottom)
+                    .append("g")
+                    .attr("transform", `translate(${margin.left},${margin.top})`);
+
+                const x = d3.scaleLinear()
+                    .domain([0, d3.max(lossData, d => d.step) || 100])
+                    .range([0, width]);
+
+                const y = d3.scaleLinear()
+                    .domain([0, d3.max(lossData, d => d.value) || 1])
+                    .range([height, 0]);
+
+                svg.append("path")
+                    .datum(lossData)
+                    .attr("class", "line")
+                    .attr("d", d3.line()
+                        .x(d => x(d.step))
+                        .y(d => y(d.value))
+                    );
+
+                svg.append("g")
+                    .attr("transform", `translate(0,${height})`)
+                    .attr("class", "axis")
+                    .call(d3.axisBottom(x).ticks(5));
+
+                svg.append("g")
+                    .attr("class", "axis")
+                    .call(d3.axisLeft(y).ticks(5));
+            }
+
+            function renderAllWeights(allWeights) {
+                const container = document.getElementById("weights-panel");
+                // Clear existing content but we might want to be smarter about updates
+                // For now, let's just rebuild if keys change, or update canvas if exists
+
+                // Check if we need to build structure
+                const keys = Object.keys(allWeights).sort();
+
+                // If container is empty or keys changed significantly (simple check: count)
+                // Ideally we diff, but let's clear for simplicity on first pass or structure change
+                // Actually, let's just clear and rebuild for this "toy" scale. 
+                // Optimization: Check if child count matches keys length.
+
+                // Better: Create a map of existing canvases
+                const existing = {};
+                container.querySelectorAll('.weight-item').forEach(el => {
+                    existing[el.dataset.name] = el;
+                });
+
+                // Clear container to re-order or just append? 
+                // Let's clear everything to be safe and simple for now.
+                container.innerHTML = '<div class="card-header">All Model Weights</div><div id="weights-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; overflow-y: auto; height: 100%;"></div>';
+                const grid = document.getElementById("weights-grid");
+
+                keys.forEach(key => {
+                    const weightData = allWeights[key];
+
+                    const item = document.createElement("div");
+                    item.className = "weight-item";
+                    item.style.display = "flex";
+                    item.style.flexDirection = "column";
+                    item.style.height = "200px";
+                    item.style.backgroundColor = "rgba(0,0,0,0.2)";
+                    item.style.borderRadius = "8px";
+                    item.style.padding = "5px";
+
+                    const label = document.createElement("div");
+                    label.innerText = key;
+                    label.style.fontSize = "10px";
+                    label.style.marginBottom = "5px";
+                    label.style.color = "#94a3b8";
+                    label.style.whiteSpace = "nowrap";
+                    label.style.overflow = "hidden";
+                    label.style.textOverflow = "ellipsis";
+                    item.appendChild(label);
+
+                    const canvasContainer = document.createElement("div");
+                    canvasContainer.style.flexGrow = "1";
+                    canvasContainer.style.position = "relative";
+                    item.appendChild(canvasContainer);
+
+                    const canvas = document.createElement("canvas");
+                    // Use client dimensions after append? No, set 100%
+                    canvas.style.width = "100%";
+                    canvas.style.height = "100%";
+                    canvasContainer.appendChild(canvas);
+
+                    grid.appendChild(item);
+
+                    // Render heatmap
+                    renderHeatmapOnCanvas(canvas, weightData);
+                });
+            }
+
+            function renderHeatmapOnCanvas(canvas, data) {
+                // Handle 1D (bias) vs 2D (weight)
+                let matrix = data;
+                if (!Array.isArray(data[0])) {
+                    // 1D array -> make it 1xN matrix for visualization
+                    matrix = [data];
+                }
+
+                const rect = canvas.getBoundingClientRect();
+                canvas.width = rect.width;
+                canvas.height = rect.height;
+                const ctx = canvas.getContext("2d");
+
+                const rows = matrix.length;
+                const cols = matrix[0].length;
+                const cellWidth = canvas.width / cols;
+                const cellHeight = canvas.height / rows;
+
+                // Find min/max
+                let min = Infinity, max = -Infinity;
+                for (let r = 0; r < rows; r++) {
+                    for (let c = 0; c < cols; c++) {
+                        const v = matrix[r][c];
+                        if (v < min) min = v;
+                        if (v > max) max = v;
+                    }
+                }
+
+                // Avoid div by zero
+                if (max === min) max = min + 1e-9;
+
+                for (let r = 0; r < rows; r++) {
+                    for (let c = 0; c < cols; c++) {
+                        const val = matrix[r][c];
+                        const norm = (val - min) / (max - min);
+                        // Blue-Red Heatmap
+                        const intensity = Math.floor(norm * 255);
+                        ctx.fillStyle = `rgb(${intensity}, 0, ${255 - intensity})`;
+                        // Use simple rects
+                        ctx.fillRect(c * cellWidth, r * cellHeight, cellWidth, cellHeight);
+                    }
                 }
             }
-        }
 
-        function renderAttention(allAttn) {
-            const container = document.getElementById("attn-heatmap");
+            function renderAttention(allAttn) {
+                const container = document.getElementById("attn-heatmap");
 
-            // Check if we need to build structure (similar to weights)
-            const keys = Object.keys(allAttn).sort((a, b) => {
-                // Sort by Layer Index
-                const getNum = s => parseInt(s.match(/\d+/)[0]);
-                return getNum(a) - getNum(b);
-            });
+                // Check if we need to build structure (similar to weights)
+                const keys = Object.keys(allAttn).sort((a, b) => {
+                    // Sort by Layer then Head. Format: "L{i}.H{h}"
+                    const parse = s => {
+                        const parts = s.split('.');
+                        const l = parseInt(parts[0].substring(1));
+                        const h = parseInt(parts[1].substring(1));
+                        return [l, h];
+                    };
+                    const [l1, h1] = parse(a);
+                    const [l2, h2] = parse(b);
+                    if (l1 !== l2) return l1 - l2;
+                    return h1 - h2;
+                });
 
-            // Clear and rebuild for simplicity
-            container.innerHTML = '<div class="card-header">Attention Patterns (Head 0)</div><div id="attn-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; overflow-y: auto; height: 100%;"></div>';
-            const grid = document.getElementById("attn-grid");
+                // Clear and rebuild for simplicity
+                container.innerHTML = '<div class="card-header">Attention Patterns (All Heads)</div><div id="attn-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; overflow-y: auto; height: 100%;"></div>';
+                const grid = document.getElementById("attn-grid");
 
-            keys.forEach(key => {
-                const attnData = allAttn[key];
+                keys.forEach(key => {
+                    const attnData = allAttn[key];
 
-                const item = document.createElement("div");
-                item.className = "attn-item";
-                item.style.display = "flex";
-                item.style.flexDirection = "column";
-                item.style.height = "200px";
-                item.style.backgroundColor = "rgba(0,0,0,0.2)";
-                item.style.borderRadius = "8px";
-                item.style.padding = "5px";
+                    const item = document.createElement("div");
+                    item.className = "attn-item";
+                    item.style.display = "flex";
+                    item.style.flexDirection = "column";
+                    item.style.height = "200px";
+                    item.style.backgroundColor = "rgba(0,0,0,0.2)";
+                    item.style.borderRadius = "8px";
+                    item.style.padding = "5px";
 
-                const label = document.createElement("div");
-                label.innerText = key;
-                label.style.fontSize = "10px";
-                label.style.marginBottom = "5px";
-                label.style.color = "#94a3b8";
-                item.appendChild(label);
+                    const label = document.createElement("div");
+                    label.innerText = key;
+                    label.style.fontSize = "10px";
+                    label.style.marginBottom = "5px";
+                    label.style.color = "#94a3b8";
+                    item.appendChild(label);
 
-                const canvasContainer = document.createElement("div");
-                canvasContainer.style.flexGrow = "1";
-                canvasContainer.style.position = "relative";
-                item.appendChild(canvasContainer);
+                    const canvasContainer = document.createElement("div");
+                    canvasContainer.style.flexGrow = "1";
+                    canvasContainer.style.position = "relative";
+                    item.appendChild(canvasContainer);
 
-                const canvas = document.createElement("canvas");
-                canvas.style.width = "100%";
-                canvas.style.height = "100%";
-                canvasContainer.appendChild(canvas);
+                    const canvas = document.createElement("canvas");
+                    canvas.style.width = "100%";
+                    canvas.style.height = "100%";
+                    canvasContainer.appendChild(canvas);
 
-                grid.appendChild(item);
+                    grid.appendChild(item);
 
-                renderHeatmapOnCanvas(canvas, attnData);
-            });
-        }
-    </script>
+                    renderHeatmapOnCanvas(canvas, attnData);
+                });
+            }
+        </script>
 </body>
 
 </html>

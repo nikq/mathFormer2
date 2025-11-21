@@ -102,16 +102,27 @@ def train():
                 all_attn_weights = {}
                 raw_attn = model.get_attention_weights()
                 for i, layer_attn in enumerate(raw_attn):
-                    # Layer i, Batch 0, Head 0
-                    all_attn_weights[f"Layer {i} Head 0"] = layer_attn[0, 0, :, :].cpu().numpy().tolist()
+                    # layer_attn shape: [Batch, Head, T, T]
+                    num_heads = layer_attn.shape[1]
+                    for h in range(num_heads):
+                        # Layer i, Batch 0, Head h
+                        all_attn_weights[f"L{i}.H{h}"] = layer_attn[0, h, :, :].cpu().numpy().tolist()
                 
                 # All learnable weights
                 all_weights = model.get_all_weights()
                 
+                # Decode current sample
+                input_text = tokenizer.decode(X[0].tolist())
+                target_text = tokenizer.decode(Y[0].tolist())
+                
                 # Send to server
                 vis_data = {
                     "layer_weights": all_weights,
-                    "attention": all_attn_weights # Now a dict of attention maps
+                    "attention": all_attn_weights,
+                    "data_sample": {
+                        "input": input_text,
+                        "target": target_text
+                    }
                 }
                 update_state(vis_data, iter_num, loss_val)
                 
