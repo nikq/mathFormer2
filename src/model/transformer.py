@@ -3,6 +3,29 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
+
+class SinusoidalPositionalEncoding(nn.Module):
+    """Fixed (non-learned) sinusoidal positional encoding.
+
+    Returns a tensor of shape (1, t, d_model) given a position index tensor
+    or uses the requested length `t` from the provided position tensor.
+    """
+    def __init__(self, block_size, d_model):
+        super().__init__()
+        pe = torch.zeros(block_size, d_model)
+        position = torch.arange(0, block_size, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)  # (1, block_size, d_model)
+        self.register_buffer('pe', pe)
+
+    def forward(self, pos):
+        # pos is a tensor like torch.arange(0, t).unsqueeze(0)
+        t = pos.size(1)
+        # return first t positions, moved to the same device as pos
+        return self.pe[:, :t, :].to(pos.device)
+
 class CausalSelfAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -64,24 +87,36 @@ class Block(nn.Module):
         return x
 
 class MathFormerConfig:
-    def __init__(self, vocab_size, block_size=128, n_layer=4, n_head=4, d_model=128):
-        self.vocab_size = vocab_size
-        self.block_size = block_size
-        self.n_layer = n_layer
-        self.n_head = n_head
-        self.d_model = d_model
+    def __init__(self, vocab_size, block_size=128, n_layer=4, n_head=4, d_model=128, pos_type='sinusoidal'):
+        self.vocab_size = vocab_size # number of tokens in the vocabulary
+        self.block_size = block_size # maximum length of input sequence
+        self.n_layer = n_layer # number of transformer layers
+        self.n_head = n_head # number of attention heads
+        self.d_model = d_model # dimension of the model
+        # pos_type: 'learned' or 'sinusoidal'
+        self.pos_type = pos_type
 
 class MathFormer(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
+        # choose positional encoding type
+        if getattr(config, 'pos_type', 'learned') == 'learned':
+            wpe = nn.Embedding(config.block_size, config.d_model)
+        else:
+            wpe = SinusoidalPositionalEncoding(config.block_size, config.d_model)
+
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.d_model),
-            wpe = nn.Embedding(config.block_size, config.d_model),
+            wpe = wpe,
             h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
             ln_f = nn.LayerNorm(config.d_model),
         ))
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
+
+        # Storage for visualization
+        self.last_token_embeddings = None
+        self.last_pos_embeddings = None
 
     def forward(self, idx, targets=None):
         device = idx.device
@@ -92,6 +127,11 @@ class MathFormer(nn.Module):
         
         tok_emb = self.transformer.wte(idx)
         pos_emb = self.transformer.wpe(pos)
+        
+        # Store for visualization
+        self.last_token_embeddings = tok_emb.detach().cpu()
+        self.last_pos_embeddings = pos_emb.detach().cpu()
+        
         x = tok_emb + pos_emb
         
         for block in self.transformer.h:
@@ -115,6 +155,15 @@ class MathFormer(nn.Module):
         for block in self.transformer.h:
             weights.append(block.attn.last_attn_weights)
         return weights
+
+    def get_embeddings(self):
+        """
+        Returns the last forward pass embeddings.
+        """
+        return {
+            "token": self.last_token_embeddings,
+            "position": self.last_pos_embeddings
+        }
 
     def get_all_weights(self):
         """
