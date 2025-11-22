@@ -31,6 +31,15 @@ def update_state(weights, step, loss):
         state.weights = weights
         state.metrics["loss"].append({"step": step, "value": loss})
         state.metrics["step"] = step
+        state.metrics["step"] = step
+        state.latest_update += 1
+
+def reset_state():
+    """
+    Called to reset the visualization state (e.g. on restart).
+    """
+    with state.lock:
+        state.metrics = {"loss": [], "step": 0}
         state.latest_update += 1
 
 def get_latest_command():
@@ -47,6 +56,7 @@ class ControlCommand(BaseModel):
 
 @app.post("/api/control")
 async def control(cmd: ControlCommand):
+    print(f"DEBUG: Server received control command: {cmd}")
     with state.lock:
         state.command_queue.append(cmd.dict())
     return {"status": "ok"}
