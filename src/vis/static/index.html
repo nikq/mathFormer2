@@ -359,9 +359,9 @@
                 for (let c = 0; c < cols; c++) {
                     const val = matrix[r][c];
                     const norm = (val - min) / (max - min);
-                    // Blue-Red Heatmap
+                    // Heatmap coloring using just gray
                     const intensity = Math.floor(norm * 255);
-                    ctx.fillStyle = `rgb(${intensity}, 0, ${255 - intensity})`;
+                    ctx.fillStyle = `rgb(${intensity}, ${intensity}, ${intensity})`;
                     // Use simple rects
                     ctx.fillRect(c * cellWidth, r * cellHeight, cellWidth, cellHeight);
                 }
@@ -423,6 +423,41 @@
 
                 renderHeatmapOnCanvas(canvas, attnData);
             });
+        }
+
+        async function restartTraining() {
+            const difficulty = document.getElementById('cfg-difficulty').value;
+            const layers = document.getElementById('cfg-layers').value;
+            const heads = document.getElementById('cfg-heads').value;
+            const dmodel = document.getElementById('cfg-dmodel').value;
+
+            const config = {
+                difficulty: parseInt(difficulty),
+                n_layer: parseInt(layers),
+                n_head: parseInt(heads),
+                d_model: parseInt(dmodel)
+            };
+
+            try {
+                const response = await fetch('/api/control', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: 'restart',
+                        config: config
+                    })
+                });
+
+                if (response.ok) {
+                    console.log('Restart command sent successfully');
+                } else {
+                    console.error('Failed to send restart command');
+                }
+            } catch (error) {
+                console.error('Error sending restart command:', error);
+            }
         }
     </script>
 </body>
