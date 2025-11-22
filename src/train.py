@@ -6,7 +6,7 @@ import numpy as np
 from src.data.generator import MathGenerator
 from src.model.tokenizer import CharTokenizer
 from src.model.transformer import MathFormer, MathFormerConfig
-from src.vis.server import start_server, update_state, get_latest_command
+from src.vis.server import start_server, update_state, get_latest_command, reset_state
 
 # Hyperparameters
 BATCH_SIZE = 64
@@ -22,10 +22,10 @@ class Trainer:
         self.tokenizer = CharTokenizer()
         self.config = MathFormerConfig(
             vocab_size=self.tokenizer.vocab_size,
-            block_size=128,
+            block_size=32,
             n_layer=4,
             n_head=4,
-            d_model=128
+            d_model=32
         )
         self.model = None
         self.optimizer = None
@@ -96,9 +96,20 @@ class Trainer:
                 all_weights = self.model.get_all_weights()
                 input_text = self.tokenizer.decode(X[0].tolist())
                 
+                # use text before '=' to generate sample output
+                output_prompt = input_text.split('=')[0] + '='
                 with torch.no_grad():
-                    pred_ids = logits[0].argmax(dim=-1)
-                    output_text = self.tokenizer.decode(pred_ids.tolist())
+                    # try infer for output text
+                    x = torch.tensor([self.tokenizer.encode(output_prompt)], dtype=torch.long).to(DEVICE)
+                    # Generate up to 20 new tokens
+                    for _ in range(20):
+                        logits, _ = self.model(x)
+                        # Get next token from the last position
+                        next_token = logits[0, -1, :].argmax()
+                        if next_token.item() == self.tokenizer.pad_token_id:
+                            break
+                        x = torch.cat((x, next_token.unsqueeze(0).unsqueeze(0)), dim=1)
+                    output_text = self.tokenizer.decode(x[0].tolist())
                 
                 vis_data = {
                     "layer_weights": all_weights,
@@ -135,9 +146,11 @@ def main_loop():
         # Check for commands
         cmd = get_latest_command()
         if cmd:
-            print(f"Received command: {cmd}")
+            print(f"DEBUG: Trainer received command: {cmd}")
             if cmd['action'] == 'restart':
+                print("DEBUG: Executing restart...")
                 trainer.update_config(cmd['config'])
+                reset_state()
         
         if trainer.running:
             try:
