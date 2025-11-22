@@ -151,6 +151,9 @@ def main_loop():
                 print("DEBUG: Executing restart...")
                 trainer.update_config(cmd['config'])
                 reset_state()
+            elif cmd['action'] == 'update_difficulty':
+                print(f"DEBUG: Updating difficulty to {cmd['config']['difficulty']}")
+                trainer.difficulty = int(cmd['config']['difficulty'])
         
         if trainer.running:
             try:
