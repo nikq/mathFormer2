@@ -22,10 +22,10 @@ class Trainer:
         self.tokenizer = CharTokenizer()
         self.config = MathFormerConfig(
             vocab_size=self.tokenizer.vocab_size,
-            block_size=32,
+            block_size=128,
             n_layer=4,
             n_head=4,
-            d_model=32
+            d_model=128
         )
         self.model = None
         self.optimizer = None
@@ -111,9 +111,14 @@ class Trainer:
                         x = torch.cat((x, next_token.unsqueeze(0).unsqueeze(0)), dim=1)
                     output_text = self.tokenizer.decode(x[0].tolist())
                 
+                embeddings = self.model.get_embeddings()
                 vis_data = {
                     "layer_weights": all_weights,
                     "attention": all_attn_weights,
+                    "embeddings": {
+                        "token": embeddings["token"][0].numpy().tolist() if embeddings["token"] is not None else [],
+                        "position": embeddings["position"][0].numpy().tolist() if embeddings["position"] is not None else []
+                    },
                     "data_sample": {
                         "input": input_text,
                         "output": output_text
