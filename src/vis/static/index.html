@@ -158,7 +158,7 @@
 
             <div class="control-group">
                 <label>Difficulty</label>
-                <input type="number" id="cfg-difficulty" value="1" min="1" max="10">
+                <input type="number" id="cfg-difficulty" value="1" min="1" max="10" onchange="updateDifficulty()">
             </div>
             <div class="control-group">
                 <label>Layers</label>
@@ -457,6 +457,31 @@
                 }
             } catch (error) {
                 console.error('Error sending restart command:', error);
+            }
+        }
+
+        async function updateDifficulty() {
+            const difficulty = document.getElementById('cfg-difficulty').value;
+
+            try {
+                const response = await fetch('/api/control', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: 'update_difficulty',
+                        config: { difficulty: parseInt(difficulty) }
+                    })
+                });
+
+                if (response.ok) {
+                    console.log('Difficulty update sent successfully');
+                } else {
+                    console.error('Failed to send difficulty update');
+                }
+            } catch (error) {
+                console.error('Error sending difficulty update:', error);
             }
         }
     </script>
